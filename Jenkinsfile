@@ -1,12 +1,13 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'MVN_HOME'
+        jdk 'java21'
+    }
+
     environment {
         SONARQUBE_SERVER = 'SonarQube'
-        MAVEN_HOME = tool 'Maven'
-        ARTIFACT_ID = "SimpleCustomerApp"
-        GROUP_ID = "com.javatpoint"
-        VERSION = "${BUILD_NUMBER}-SNAPSHOT"
     }
 
     stages {
@@ -19,23 +20,28 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv('SonarQube') {
-                    sh "${MAVEN_HOME}/bin/mvn clean verify sonar:sonar"
+                    sh 'mvn clean verify sonar:sonar'
                 }
             }
         }
 
         stage('Maven Build') {
             steps {
-                sh "${MAVEN_HOME}/bin/mvn clean package"
+                sh 'mvn clean package'
             }
         }
 
         stage('Publish to Nexus') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    script {
-                        def warFile = "target/${env.ARTIFACT_ID}-${env.VERSION}.war"
-                        def nexusPath = "${env.GROUP_ID.replace('.', '/')}/${env.ARTIFACT_ID}/${env.VERSION}/${env.ARTIFACT_ID}-${env.VERSION}.war"
+                script {
+                    def pom = readMavenPom file: 'pom.xml'
+                    def artifactId = pom.artifactId
+                    def groupId = pom.groupId
+                    def version = pom.version
+
+                    withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                        def warFile = "target/${artifactId}-${version}.war"
+                        def nexusPath = "${groupId.replace('.', '/')}/${artifactId}/${version}/${artifactId}-${version}.war"
                         def uploadUrl = "http://54.91.176.145:8081/repository/hiring-app/${nexusPath}"
 
                         sh """
@@ -49,9 +55,13 @@ pipeline {
 
         stage('Deploy to Tomcat') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
-                    script {
-                        def warFile = "target/${env.ARTIFACT_ID}-${env.VERSION}.war"
+                script {
+                    def pom = readMavenPom file: 'pom.xml'
+                    def artifactId = pom.artifactId
+                    def version = pom.version
+                    def warFile = "target/${artifactId}-${version}.war"
+
+                    withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
                         sh """
                             curl -u $TOMCAT_USER:$TOMCAT_PASS --upload-file ${warFile} http://54.91.176.145:8080/manager/text/deploy?path=/sabearapp&update=true
                         """
