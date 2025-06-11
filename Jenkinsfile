@@ -1,12 +1,5 @@
 pipeline {
-    agent {
-        label 'any'
-    }
-
-    tools {
-        maven 'MVN_HOME'         // Ensure this is correctly configured under Jenkins Global Tools
-        jdk 'java21'             // Ensure this JDK is installed on your Jenkins server and set correctly
-    }
+    agent any
 
     environment {
         // Nexus Configuration
@@ -24,7 +17,7 @@ pipeline {
         TOMCAT_URL = "http://54.91.176.145:8080/manager/html"
         TOMCAT_CREDENTIAL_ID = "tomcat"
 
-        // Slack Channel
+        // Slack
         SLACK_CHANNEL = "#jenkins-alerts"
     }
 
@@ -47,21 +40,20 @@ pipeline {
                     withCredentials([string(credentialsId: "${SONARQUBE_CREDENTIAL_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             mvn sonar:sonar \
-                                -Dsonar.projectKey=sabear_simplecutomerapp \
-                                -Dsonar.login=$SONAR_TOKEN \
-                                -Dsonar.host.url=$SONARQUBE_URL
+                              -Dsonar.projectKey=sabear_simplecutomerapp \
+                              -Dsonar.host.url=$SONARQUBE_URL \
+                              -Dsonar.login=$SONAR_TOKEN
                         """
                     }
                 }
             }
         }
 
-        stage('Publish to Nexus') {
+        stage('Upload to Nexus') {
             steps {
                 script {
                     def pom = readMavenPom file: 'pom.xml'
                     def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
-
                     if (!fileExists(warFile)) {
                         error "WAR file not found: ${warFile}"
                     }
@@ -88,13 +80,8 @@ pipeline {
                 script {
                     def pom = readMavenPom file: 'pom.xml'
                     def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
-
                     deploy adapters: [
-                        tomcat9(
-                            credentialsId: TOMCAT_CREDENTIAL_ID,
-                            path: '',
-                            url: TOMCAT_URL
-                        )
+                        tomcat9(credentialsId: TOMCAT_CREDENTIAL_ID, path: '', url: TOMCAT_URL)
                     ],
                     contextPath: "/${pom.artifactId}",
                     war: warFile
@@ -105,10 +92,10 @@ pipeline {
 
     post {
         success {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "✅ *SUCCESS*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See build: ${env.BUILD_URL}", color: "#36a64f")
+            slackSend(channel: "${SLACK_CHANNEL}", message: "✅ SUCCESS: Build & Deploy of `sabear_simplecutomerapp` complete.\n${env.BUILD_URL}", color: "#36a64f")
         }
         failure {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "❌ *FAILURE*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See build: ${env.BUILD_URL}", color: "#ff0000")
+            slackSend(channel: "${SLACK_CHANNEL}", message: "❌ FAILURE: Build & Deploy of `sabear_simplecutomerapp` failed.\n${env.BUILD_URL}", color: "#ff0000")
         }
     }
 }
