@@ -1,11 +1,12 @@
 
 pipeline {
-    agent { label "master" } // Consider changing "master" to a dedicated agent label for production workloads
+    agent any {
 
     tools {
         maven "MVN_HOME" // Ensure this matches your Maven tool name configured in Jenkins (Manage Jenkins -> Tools)
+        Java "java21"
     }
-
+    }
     environment {
         // Nexus Configuration
         NEXUS_VERSION = "nexus3" // Or "nexus2" depending on your Nexus version
