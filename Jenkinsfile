@@ -1,19 +1,24 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'MVN_HOME'
+        jdk 'java21'
+    }
+
     environment {
-        // Nexus Configuration
+        // Nexus Config
         NEXUS_VERSION = "nexus3"
         NEXUS_PROTOCOL = "http"
         NEXUS_URL = "54.91.176.145:8081"
         NEXUS_REPOSITORY = "hiring-app"
         NEXUS_CREDENTIAL_ID = "nexus_server"
 
-        // SonarQube Configuration
+        // SonarQube
         SONARQUBE_URL = "http://100.25.214.16:9000"
         SONARQUBE_CREDENTIAL_ID = "sonarqube"
 
-        // Tomcat Configuration
+        // Tomcat
         TOMCAT_URL = "http://54.91.176.145:8080/manager/html"
         TOMCAT_CREDENTIAL_ID = "tomcat"
 
@@ -40,22 +45,23 @@ pipeline {
                     withCredentials([string(credentialsId: "${SONARQUBE_CREDENTIAL_ID}", variable: 'SONAR_TOKEN')]) {
                         sh """
                             mvn sonar:sonar \
-                              -Dsonar.projectKey=sabear_simplecutomerapp \
-                              -Dsonar.host.url=$SONARQUBE_URL \
-                              -Dsonar.login=$SONAR_TOKEN
+                                -Dsonar.projectKey=sabear_simplecutomerapp \
+                                -Dsonar.host.url=$SONARQUBE_URL \
+                                -Dsonar.login=$SONAR_TOKEN
                         """
                     }
                 }
             }
         }
 
-        stage('Upload to Nexus') {
+        stage('Publish to Nexus') {
             steps {
                 script {
                     def pom = readMavenPom file: 'pom.xml'
                     def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
+
                     if (!fileExists(warFile)) {
-                        error "WAR file not found: ${warFile}"
+                        error "WAR file not found at ${warFile}"
                     }
 
                     nexusArtifactUploader(
@@ -80,8 +86,13 @@ pipeline {
                 script {
                     def pom = readMavenPom file: 'pom.xml'
                     def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
+
                     deploy adapters: [
-                        tomcat9(credentialsId: TOMCAT_CREDENTIAL_ID, path: '', url: TOMCAT_URL)
+                        tomcat9(
+                            credentialsId: TOMCAT_CREDENTIAL_ID,
+                            path: '',
+                            url: TOMCAT_URL
+                        )
                     ],
                     contextPath: "/${pom.artifactId}",
                     war: warFile
@@ -92,10 +103,10 @@ pipeline {
 
     post {
         success {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "✅ SUCCESS: Build & Deploy of `sabear_simplecutomerapp` complete.\n${env.BUILD_URL}", color: "#36a64f")
+            slackSend(channel: "${SLACK_CHANNEL}", message: "✅ *SUCCESS*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See: ${env.BUILD_URL}", color: "#36a64f")
         }
         failure {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "❌ FAILURE: Build & Deploy of `sabear_simplecutomerapp` failed.\n${env.BUILD_URL}", color: "#ff0000")
+            slackSend(channel: "${SLACK_CHANNEL}", message: "❌ *FAILURE*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See: ${env.BUILD_URL}", color: "#ff0000")
         }
     }
 }
