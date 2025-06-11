@@ -1,101 +1,60 @@
 pipeline {
     agent any
 
-    tools {
-        maven 'MVN_HOME'
-        jdk 'java21'
-    }
-
     environment {
-        // Nexus Config
-        NEXUS_VERSION = "nexus3"
-        NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "54.91.176.145:8081"
-        NEXUS_REPOSITORY = "hiring-app"
-        NEXUS_CREDENTIAL_ID = "nexus_server"
-
-        // SonarQube
-        SONARQUBE_URL = "http://100.25.214.16:9000"
-        SONARQUBE_CREDENTIAL_ID = "sonarqube"
-
-        // Tomcat
-        TOMCAT_URL = "http://54.91.176.145:8080/manager/html"
-        TOMCAT_CREDENTIAL_ID = "tomcat"
-
-        // Slack
-        SLACK_CHANNEL = "#jenkins-alerts"
+        SONARQUBE_SERVER = 'SonarQube'
+        MAVEN_HOME = tool 'Maven'
     }
 
     stages {
-        stage('Clone Code') {
+        stage('Git Clone') {
             steps {
-                git branch: 'master', url: 'https://github.com/nithinreddy8811/declarative.git'
+                git branch: 'feature-1.1', url: 'https://github.com/betawins/sabear_simplecutomerapp.git'
             }
         }
 
-        stage('Build with Maven') {
+        stage('SonarQube Analysis') {
             steps {
-                sh 'mvn -Dmaven.test.failure.ignore=true clean install'
+                withSonarQubeEnv('SonarQube') {
+                    sh "${MAVEN_HOME}/bin/mvn clean verify sonar:sonar"
+                }
             }
         }
 
-        stage('Run SonarQube Scan') {
+        stage('Maven Build') {
             steps {
-                withSonarQubeEnv('sonarqube') {
-                    withCredentials([string(credentialsId: "${SONARQUBE_CREDENTIAL_ID}", variable: 'SONAR_TOKEN')]) {
+                sh "${MAVEN_HOME}/bin/mvn clean package"
+            }
+        }
+
+        stage('Publish to Nexus') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    script {
+                        def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
+                        def artifactId = "sabear_simplecutomerapp"
+                        def version = "1.0"
+                        def groupId = "com.example"
+
+                        def uploadUrl = "http://54.91.176.145:8081/repository/hiring-app/${groupId.replace('.', '/')}/${artifactId}/${version}/${artifactId}-${version}.war"
+
                         sh """
-                            mvn sonar:sonar \
-                                -Dsonar.projectKey=sabear_simplecutomerapp \
-                                -Dsonar.host.url=$SONARQUBE_URL \
-                                -Dsonar.login=$SONAR_TOKEN
+                            curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file ${warFile} ${uploadUrl}
                         """
                     }
                 }
             }
         }
 
-        stage('Publish to Nexus') {
-            steps {
-                script {
-                    def pom = readMavenPom file: 'pom.xml'
-                    def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
-
-                    if (!fileExists(warFile)) {
-                        error "WAR file not found at ${warFile}"
-                    }
-
-                    nexusArtifactUploader(
-                        nexusVersion: NEXUS_VERSION,
-                        protocol: NEXUS_PROTOCOL,
-                        nexusUrl: NEXUS_URL,
-                        repository: NEXUS_REPOSITORY,
-                        credentialsId: NEXUS_CREDENTIAL_ID,
-                        groupId: pom.groupId,
-                        version: pom.version,
-                        artifacts: [
-                            [artifactId: pom.artifactId, classifier: '', file: warFile, type: pom.packaging],
-                            [artifactId: pom.artifactId, classifier: '', file: 'pom.xml', type: 'pom']
-                        ]
-                    )
-                }
-            }
-        }
-
         stage('Deploy to Tomcat') {
             steps {
-                script {
-                    def pom = readMavenPom file: 'pom.xml'
-                    def warFile = "target/${pom.artifactId}-${pom.version}.${pom.packaging}"
-
-                    deploy adapters: [
-                        tomcat9(
-                            credentialsId: TOMCAT_CREDENTIAL_ID,
-                            path: '',
-                            url: TOMCAT_URL
-                        )
-                    ],
-                    contextPath: "/${pom.artifactId}",
-                    war: warFile
+                withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
+                    script {
+                        def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
+                        sh """
+                            curl -u $TOMCAT_USER:$TOMCAT_PASS --upload-file ${warFile} http://54.91.176.145:8080/manager/text/deploy?path=/sabearapp&update=true
+                        """
+                    }
                 }
             }
         }
@@ -103,10 +62,18 @@ pipeline {
 
     post {
         success {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "✅ *SUCCESS*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See: ${env.BUILD_URL}", color: "#36a64f")
+            slackSend (
+                channel: '#jenkins-alerts',
+                color: 'good',
+                message: "Build SUCCESSFUL for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+            )
         }
         failure {
-            slackSend(channel: "${SLACK_CHANNEL}", message: "❌ *FAILURE*: Build & Deploy for `sabear_simplecutomerapp` on Jenkins. See: ${env.BUILD_URL}", color: "#ff0000")
+            slackSend (
+                channel: '#jenkins-alerts',
+                color: '#ff0000',
+                message: "Build FAILED for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+            )
         }
     }
 }
