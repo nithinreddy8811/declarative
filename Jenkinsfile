@@ -1,82 +1,68 @@
 pipeline {
-    agent {
-        label "master"
+    agent any
+
+    environment {
+        SONARQUBE_ENV = 'MySonarQubeServer'
+        NEXUS_CREDENTIALS_ID = 'nexus_server'
+        TOMCAT_CREDENTIALS_ID = 'tomcat'
+        NEXUS_URL = 'http://54.91.176.145:8081'
+        SLACK_CHANNEL = '#jenkins-alerts'
+        TOMCAT_URL = 'http://54.91.176.145:8080/manager/text'
     }
-    tools {
-        // Note: this should match with the tool name configured in your jenkins instance (JENKINS_URL/configureTools/)
-        maven "MVN_HOME"
-        
-    }
-	 environment {
-        // This can be nexus3 or nexus2
-        NEXUS_VERSION = "nexus3"
-        // This can be http or https
-        NEXUS_PROTOCOL = "http"
-        // Where your Nexus is running
-        NEXUS_URL = "18.216.151.197:8081/"
-        // Repository where we will upload the artifact
-        NEXUS_REPOSITORY = "soanrqube"
-        // Jenkins credential id to authenticate to Nexus OSS
-        NEXUS_CREDENTIAL_ID = "nexus_keygen"
-    }
+
     stages {
-        stage("clone code") {
+        stage('Git Clone') {
             steps {
-                script {
-                    // Let's clone the source
-                    git 'https://github.com/betawins/sabear_simplecutomerapp.git';
+                git branch: 'feature-1.1',
+                    url: 'https://github.com/nithinreddy8811/declarative.git'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONARQUBE_ENV}") {
+                    sh 'mvn clean verify sonar:sonar'
                 }
             }
         }
-        stage("mvn build") {
+
+        stage('Maven Compile') {
             steps {
-                script {
-                    // If you are using Windows then you should use "bat" step
-                    // Since unit testing is out of the scope we skip them
-                    sh 'mvn -Dmaven.test.failure.ignore=true install'
-                }
+                sh 'mvn clean package'
             }
         }
-        stage("publish to nexus") {
+
+        stage('Upload to Nexus') {
             steps {
-                script {
-                    // Read POM xml file using 'readMavenPom' step , this step 'readMavenPom' is included in: https://plugins.jenkins.io/pipeline-utility-steps
-                    pom = readMavenPom file: "pom.xml";
-                    // Find built artifact under target folder
-                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
-                    // Print some info from the artifact found
-                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
-                    // Extract the path from the File found
-                    artifactPath = filesByGlob[0].path;
-                    // Assign to a boolean response verifying If the artifact name exists
-                    artifactExists = fileExists artifactPath;
-                    if(artifactExists) {
-                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version}";
-                        nexusArtifactUploader(
-                            nexusVersion: NEXUS_VERSION,
-                            protocol: NEXUS_PROTOCOL,
-                            nexusUrl: NEXUS_URL,
-			    groupId: pom.groupId,
-                            version: pom.version,
-                            repository: NEXUS_REPOSITORY,
-                            credentialsId: NEXUS_CREDENTIAL_ID,
-                            artifacts: [
-                                // Artifact generated such as .jar, .ear and .war files.
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: artifactPath,
-                                type: pom.packaging],
-                                // Lets upload the pom.xml file for additional information for Transitive dependencies
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: "pom.xml",
-                                type: "pom"]
-                            ]
-                        );
-                    } else {
-                        error "*** File: ${artifactPath}, could not be found";
-                    }
-                }
+                nexusArtifactUploader(
+                    nexusVersion: 'nexus3',
+                    protocol: 'http',
+                    nexusUrl: "${NEXUS_URL}",
+                    groupId: 'com.devops',
+                    version: '1.0',
+                    repository: 'hiring-app',
+                    credentialsId: "${NEXUS_CREDENTIALS_ID}",
+                    artifacts: [[
+                        artifactId: 'declarative-app',
+                        classifier: '',
+                        file: 'target/*.war',
+                        type: 'war'
+                    ]]
+                )
+            }
+        }
+
+        stage('Slack Notification') {
+            steps {
+                slackSend(channel: "${SLACK_CHANNEL}", message: "✅ Jenkins Build #${env.BUILD_NUMBER} by nithin-a5o3317 is successful.")
+            }
+        }
+
+        stage('Deploy to Tomcat') {
+            steps {
+                deploy adapters: [tomcat8(credentialsId: "${TOMCAT_CREDENTIALS_ID}", path: '', url: "${TOMCAT_URL}")],
+                       contextPath: 'declarative-app',
+                       war: 'target/*.war'
             }
         }
     }
