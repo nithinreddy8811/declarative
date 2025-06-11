@@ -15,7 +15,7 @@ pipeline {
         NEXUS_CREDENTIAL_ID = "nexus_server" // Ensure this ID is correct and active in Jenkins Credentials
 
         // SonarQube Configuration
-        SONARQUBE_URL = "http://100.25.214.16:9000/" // Keep the full URL here
+        SONARQUBE_URL = "http://100.25.214.16:9000" // Keep the full URL here
         SONARQUBE_CREDENTIAL_ID = "sonarqube" // Ensure this ID is correct and active in Jenkins Credentials
 
         // Tomcat Deployment Configuration
