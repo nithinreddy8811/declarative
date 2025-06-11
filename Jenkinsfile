@@ -4,7 +4,7 @@ pipeline {
 
     tools {
         maven "MVN_HOME" // Ensure this matches your Maven tool name configured in Jenkins (Manage Jenkins -> Tools)
-        Java "java21"
+        java "java21"
     }
     }
     environment {
