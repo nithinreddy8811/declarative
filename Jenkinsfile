@@ -4,6 +4,9 @@ pipeline {
     environment {
         SONARQUBE_SERVER = 'SonarQube'
         MAVEN_HOME = tool 'Maven'
+        ARTIFACT_ID = "SimpleCustomerApp"
+        GROUP_ID = "com.javatpoint"
+        VERSION = "${BUILD_NUMBER}-SNAPSHOT"
     }
 
     stages {
@@ -31,14 +34,12 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
                     script {
-                        def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
-                        def artifactId = "sabear_simplecutomerapp"
-                        def version = "1.0"
-                        def groupId = "com.example"
-
-                        def uploadUrl = "http://54.91.176.145:8081/repository/hiring-app/${groupId.replace('.', '/')}/${artifactId}/${version}/${artifactId}-${version}.war"
+                        def warFile = "target/${env.ARTIFACT_ID}-${env.VERSION}.war"
+                        def nexusPath = "${env.GROUP_ID.replace('.', '/')}/${env.ARTIFACT_ID}/${env.VERSION}/${env.ARTIFACT_ID}-${env.VERSION}.war"
+                        def uploadUrl = "http://54.91.176.145:8081/repository/hiring-app/${nexusPath}"
 
                         sh """
+                            echo "Uploading ${warFile} to Nexus..."
                             curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file ${warFile} ${uploadUrl}
                         """
                     }
@@ -50,7 +51,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
                     script {
-                        def warFile = sh(script: "ls target/*.war", returnStdout: true).trim()
+                        def warFile = "target/${env.ARTIFACT_ID}-${env.VERSION}.war"
                         sh """
                             curl -u $TOMCAT_USER:$TOMCAT_PASS --upload-file ${warFile} http://54.91.176.145:8080/manager/text/deploy?path=/sabearapp&update=true
                         """
@@ -65,14 +66,14 @@ pipeline {
             slackSend (
                 channel: '#jenkins-alerts',
                 color: 'good',
-                message: "Build SUCCESSFUL for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                message: "✅ Build SUCCESSFUL for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
             )
         }
         failure {
             slackSend (
                 channel: '#jenkins-alerts',
                 color: '#ff0000',
-                message: "Build FAILED for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                message: "❌ Build FAILED for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
             )
         }
     }
