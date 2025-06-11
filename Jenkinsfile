@@ -13,7 +13,7 @@ pipeline {
     stages {
         stage('Git Clone') {
             steps {
-                git branch: 'feature-1.1',
+                git branch: 'master',
                     url: 'https://github.com/nithinreddy8811/declarative.git'
             }
         }
