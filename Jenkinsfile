@@ -2,22 +2,31 @@ pipeline {
     agent any
 
     tools {
-        maven 'MVN_HOME'
+        maven 'Maven-3.9.4'
         jdk 'java21'
     }
 
+    parameters {
+        booleanParam(name: 'RUN_SONARQUBE', defaultValue: true, description: 'Run SonarQube analysis')
+        booleanParam(name: 'RUN_MAVEN_DEPLOY', defaultValue: true, description: 'Run Maven build and deploy to Nexus')
+        booleanParam(name: 'DEPLOY_TO_TOMCAT', defaultValue: true, description: 'Deploy WAR to Tomcat')
+    }
+
     environment {
-        SONARQUBE_SERVER = 'SonarQube'
+        NEXUS_REPO_URL = 'http://54.227.50.97:8081/repository/simplecustomerapp/'
     }
 
     stages {
         stage('Git Clone') {
             steps {
-                git branch: 'feature-1.1', url: 'https://github.com/nithinreddy8811/declarative.git'
+                git branch: 'master', url: 'https://github.com/nithinreddy8811/declarative.git'
             }
         }
 
         stage('SonarQube Analysis') {
+            when {
+                expression { return params.RUN_SONARQUBE }
+            }
             steps {
                 withSonarQubeEnv('SonarQube') {
                     sh 'mvn clean verify sonar:sonar'
@@ -25,66 +34,46 @@ pipeline {
             }
         }
 
-        stage('Maven Build') {
-            steps {
-                sh 'mvn clean package'
+        stage('Maven Build & Deploy to Nexus') {
+            when {
+                expression { return params.RUN_MAVEN_DEPLOY }
             }
-        }
-
-        stage('Publish to Nexus') {
             steps {
-                script {
-                    def pom = readMavenPom file: 'pom.xml'
-                    def artifactId = pom.artifactId
-                    def groupId = pom.groupId
-                    def version = pom.version
-
-                    withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                        def warFile = "target/${artifactId}-${version}.war"
-                        def nexusPath = "${groupId.replace('.', '/')}/${artifactId}/${version}/${artifactId}-${version}.war"
-                        def uploadUrl = "http://54.91.176.145:8081/repository/hiring-app/${nexusPath}"
-
-                        sh """
-                            echo "Uploading ${warFile} to Nexus..."
-                            curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file ${warFile} ${uploadUrl}
-                        """
-                    }
+                withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
+                    sh """
+                        mvn clean deploy -DskipTests \
+                        -DaltDeploymentRepository=simplecustomerapp::default::http://$NEXUS_USERNAME:$NEXUS_PASSWORD@${env.NEXUS_REPO_URL}
+                    """
                 }
             }
         }
 
         stage('Deploy to Tomcat') {
+            when {
+                expression { return params.DEPLOY_TO_TOMCAT }
+            }
             steps {
-                script {
-                    def pom = readMavenPom file: 'pom.xml'
-                    def artifactId = pom.artifactId
-                    def version = pom.version
-                    def warFile = "target/${artifactId}-${version}.war"
+                withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USERNAME', passwordVariable: 'TOMCAT_PASSWORD')]) {
+                    sh """
+                        WAR_FILE=\$(ls target/*.war | head -n 1)
+                        cp \$WAR_FILE target/customerapp.war
 
-                    withCredentials([usernamePassword(credentialsId: 'tomcat', usernameVariable: 'TOMCAT_USER', passwordVariable: 'TOMCAT_PASS')]) {
-                        sh """
-                            curl -u $TOMCAT_USER:$TOMCAT_PASS --upload-file ${warFile} http://54.91.176.145:8080/manager/text/deploy?path=/sabearapp&update=true
-                        """
-                    }
+                        curl -v -u ${TOMCAT_USERNAME}:${TOMCAT_PASSWORD} \
+                        --upload-file target/customerapp.war \
+                        "http://54.227.50.97:8080/manager/text/deploy?path=/customerapp&update=true"
+                    """
                 }
             }
         }
-    }
 
-    post {
-        success {
-            slackSend (
-                channel: '#jenkins-alerts',
-                color: 'good',
-                message: "✅ Build SUCCESSFUL for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-            )
-        }
-        failure {
-            slackSend (
-                channel: '#jenkins-alerts',
-                color: '#ff0000',
-                message: "❌ Build FAILED for ${env.JOB_NAME} #${env.BUILD_NUMBER}"
-            )
+        stage('Slack Notification') {
+            steps {
+                slackSend(
+                    color: '#00FF00',
+                    message: "✅ Build Successful: ${env.JOB_NAME} #${env.BUILD_NUMBER} → <${env.BUILD_URL}|View Logs>",
+                    tokenCredentialId: 'slack-token'
+                )
+            }
         }
     }
 }
