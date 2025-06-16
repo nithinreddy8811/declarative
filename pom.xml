@@ -6,7 +6,7 @@
    <groupId>com.javatpoint</groupId>
    <artifactId>SimpleCustomerApp</artifactId>
    <packaging>war</packaging>
-   <version>${BUILD_NUMBER}-SNAPSHOT</version>
+   <version>1.0.0</version>
    <name>SimpleCustomerApp</name>
    <url>http://maven.apache.org</url>
    <properties>
@@ -26,3 +26,10 @@
       </plugins>
    </build>
 </project>
+
+<distributionManagement>
+    <repository>
+        <id>nexus</id>
+        <url>http://54.227.50.97:8081/repository/simplecustomerapp/</url>
+    </repository>
+</distributionManagement>
