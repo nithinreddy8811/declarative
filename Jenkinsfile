@@ -42,7 +42,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'nexus_server', usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
                     sh """
                         mvn clean deploy -DskipTests \
-                        -DaltDeploymentRepository=simplecustomerapp::default::http://$NEXUS_USERNAME:$NEXUS_PASSWORD@${env.NEXUS_REPO_URL}
+                        -DaltDeploymentRepository=simplecustomerapp::default::http://$NEXUS_USERNAME:$NEXUS_PASSWORD@54.227.50.97:8081/repository/simplecustomerapp/
                     """
                 }
             }
